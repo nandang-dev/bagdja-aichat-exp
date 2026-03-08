@@ -1,0 +1,5 @@
+Jawaban AI harus berdasarkan dokumen yang tersedia.
+
+Jika informasi tidak ditemukan di dokumen, AI harus mengatakan bahwa informasi tidak ditemukan.
+
+Sistem tidak boleh mengarang jawaban.
