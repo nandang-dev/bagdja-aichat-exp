@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Widget Builder</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 1100px;
+      margin: 30px auto;
+      padding: 0 16px;
+      background: #f7f7f7;
+    }
+    .card {
+      background: #fff;
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 16px;
+      box-shadow: 0 2px 10px rgba(0,0,0,.08);
+    }
+    input, select, textarea {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 12px;
+      border-radius: 8px;
+      border: 1px solid #ccc;
+      margin-top: 6px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 14px;
+    }
+    button {
+      padding: 10px 16px;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      margin-right: 8px;
+      margin-top: 12px;
+    }
+    .btn-primary {
+      background: #111827;
+      color: #fff;
+    }
+    .btn-secondary {
+      background: #e5e7eb;
+      color: #111827;
+    }
+    pre {
+      white-space: pre-wrap;
+      background: #111827;
+      color: #fff;
+      padding: 16px;
+      border-radius: 12px;
+      overflow-x: auto;
+    }
+    .muted {
+      color: #6b7280;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Bubble Widget Builder</h1>
+    <p class="muted">Generate embed code dan preview widget langsung.</p>
+    <a href="/">← Kembali ke Chat</a>
+  </div>
+
+  <div class="card">
+    <div class="grid">
+      <div>
+        <label><strong>App ID</strong></label>
+        <select id="appId"></select>
+        <div id="appStatus" class="muted" style="margin-top:6px;"></div>
+      </div>
+      <div>
+        <label><strong>API Base URL</strong></label>
+        <input id="apiBaseUrl" value="" placeholder="http://localhost:3000" />
+      </div>
+      <div>
+        <label><strong>Widget Title</strong></label>
+        <input id="title" value="AI Assistant" />
+      </div>
+      <div>
+        <label><strong>Welcome Message</strong></label>
+        <input id="welcome" value="Halo! Ada yang bisa saya bantu?" />
+      </div>
+      <div>
+        <label><strong>Placeholder</strong></label>
+        <input id="placeholder" value="Tulis pertanyaan..." />
+      </div>
+      <div>
+        <label><strong>Primary Color</strong></label>
+        <input id="primaryColor" value="#111827" />
+      </div>
+    </div>
+
+    <button class="btn-primary" onclick="renderPreview()">Render Preview</button>
+    <button class="btn-secondary" onclick="copyEmbedCode()">Copy Embed Code</button>
+  </div>
+
+  <div class="card">
+    <h3>Embed Code</h3>
+    <pre id="embedCode"></pre>
+  </div>
+
+  <div class="card">
+    <h3>Preview Area</h3>
+    <p class="muted">Preview widget akan muncul sebagai bubble di halaman ini.</p>
+  </div>
+
+  <script>
+    const appIdEl = document.getElementById('appId');
+    const apiBaseUrlEl = document.getElementById('apiBaseUrl');
+    const titleEl = document.getElementById('title');
+    const welcomeEl = document.getElementById('welcome');
+    const placeholderEl = document.getElementById('placeholder');
+    const primaryColorEl = document.getElementById('primaryColor');
+    const embedCodeEl = document.getElementById('embedCode');
+    const appStatusEl = document.getElementById('appStatus');
+
+    function normalizeBaseUrl(value) {
+      const raw = (value || '').trim();
+      const origin = (window.location.origin || '').trim();
+
+      let base = raw;
+      if (!base) {
+        base = origin.startsWith('http') ? origin : 'http://localhost:3000';
+      }
+
+      if (base && !base.includes('://')) {
+        base = `http://${base}`;
+      }
+
+      return base.replace(/\/+$/, '');
+    }
+
+    async function loadApps() {
+      const baseUrl = normalizeBaseUrl(apiBaseUrlEl.value);
+      if (appStatusEl) appStatusEl.textContent = 'Memuat daftar app...';
+
+      try {
+        const res = await fetch(`${baseUrl}/rag/apps`);
+        let apps;
+        try {
+          apps = await res.json();
+        } catch {
+          const text = await res.text();
+          throw new Error(`Response bukan JSON (${res.status}): ${text.slice(0, 120)}`);
+        }
+
+        if (!res.ok) {
+          throw new Error(apps.message || 'Gagal memuat daftar app');
+        }
+
+        const savedAppId = localStorage.getItem('rag_app_id') || '';
+        const list = Array.isArray(apps) && apps.length ? apps : ['inovatrack'];
+
+        appIdEl.innerHTML = '';
+        list.forEach((appId) => {
+          const opt = document.createElement('option');
+          opt.value = appId;
+          opt.textContent = appId;
+          appIdEl.appendChild(opt);
+        });
+
+        if (savedAppId && list.includes(savedAppId)) {
+          appIdEl.value = savedAppId;
+        }
+
+        localStorage.setItem('rag_app_id', appIdEl.value || list[0] || '');
+        if (appStatusEl) appStatusEl.textContent = `Sumber: ${baseUrl}`;
+      } catch (error) {
+        appIdEl.innerHTML = '';
+        const opt = document.createElement('option');
+        opt.value = 'inovatrack';
+        opt.textContent = 'inovatrack';
+        appIdEl.appendChild(opt);
+        if (appStatusEl)
+          appStatusEl.textContent = `Gagal memuat daftar app dari ${baseUrl}: ${error.message}`;
+      }
+    }
+
+    function currentConfig() {
+      return {
+        appId: appIdEl.value,
+        apiBaseUrl: normalizeBaseUrl(apiBaseUrlEl.value),
+        title: titleEl.value.trim(),
+        welcome: welcomeEl.value.trim(),
+        placeholder: placeholderEl.value.trim(),
+        primaryColor: primaryColorEl.value.trim(),
+        stream: true,
+      };
+    }
+
+    function buildEmbedCode() {
+      const cfg = currentConfig();
+      const closeScript = '</scr' + 'ipt>';
+
+      return `<script>
+window.AiChatWidgetConfig = ${JSON.stringify(cfg, null, 2)};
+${closeScript}
+<script src="${cfg.apiBaseUrl}/widget.js">${closeScript}`;
+    }
+
+    function updateCode() {
+      embedCodeEl.textContent = buildEmbedCode();
+    }
+
+    function destroyPreview() {
+      document.querySelectorAll('.aiw-bubble, .aiw-panel').forEach((el) => el.remove());
+      document.querySelectorAll('style').forEach((style) => {
+        if (style.textContent.includes('.aiw-bubble')) style.remove();
+      });
+      window.__AI_CHAT_WIDGET_LOADED__ = false;
+    }
+
+    function renderPreview() {
+      destroyPreview();
+      window.AiChatWidgetConfig = currentConfig();
+
+      const script = document.createElement('script');
+      script.src = `${window.AiChatWidgetConfig.apiBaseUrl}/widget.js?v=${Date.now()}`;
+      script.onload = updateCode;
+      document.body.appendChild(script);
+    }
+
+    async function copyEmbedCode() {
+      updateCode();
+      await navigator.clipboard.writeText(embedCodeEl.textContent);
+      alert('Embed code copied');
+    }
+
+    [apiBaseUrlEl, titleEl, welcomeEl, placeholderEl, primaryColorEl, appIdEl].forEach((el) => {
+      el.addEventListener('input', updateCode);
+      el.addEventListener('change', updateCode);
+    });
+
+    (async () => {
+      apiBaseUrlEl.value = normalizeBaseUrl('');
+      await loadApps();
+      updateCode();
+      renderPreview();
+    })();
+
+    apiBaseUrlEl.addEventListener('change', () => {
+      loadApps().then(updateCode);
+    });
+
+    appIdEl.addEventListener('change', () => {
+      localStorage.setItem('rag_app_id', appIdEl.value || '');
+    });
+  </script>
+</body>
+</html>

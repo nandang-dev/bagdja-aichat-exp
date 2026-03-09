@@ -1,0 +1,6 @@
+{
+  "dependencies": {
+    "mammoth": "^1.11.0",
+    "textract": "^2.5.0"
+  }
+}

@@ -134,7 +134,7 @@
 
   <div class="card">
     <h3>Upload Document</h3>
-    <input id="uploadFile" type="file" accept=".txt,.pdf" />
+    <input id="uploadFile" type="file" accept=".txt,.pdf,.doc,.docx" />
     <button class="btn-primary" onclick="uploadDocument()">Upload</button>
   </div>
 
@@ -274,7 +274,7 @@
 
       const input = document.createElement('input');
       input.type = 'file';
-      input.accept = '.txt,.pdf';
+      input.accept = '.txt,.pdf,.doc,.docx';
 
       input.onchange = async () => {
         const file = input.files[0];

@@ -1,279 +1,362 @@
 <!DOCTYPE html>
 <html lang="id">
+
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>RAG Mini Chat</title>
-  <style>
-    body {
-      font-family: Arial, sans-serif;
-      max-width: 900px;
-      margin: 30px auto;
-      padding: 0 16px;
-      background: #f7f7f7;
-    }
-    .card {
-      background: white;
-      border-radius: 12px;
-      padding: 16px;
-      box-shadow: 0 2px 10px rgba(0,0,0,0.08);
-      margin-bottom: 16px;
-    }
-    input, textarea, select {
-      width: 100%;
-      box-sizing: border-box;
-      padding: 12px;
-      border-radius: 8px;
-      border: 1px solid #ccc;
-      margin-top: 6px;
-    }
-    select {
-      appearance: none;
-      background-color: #fff;
-      border-color: #d1d5db;
-      padding-right: 44px;
-      background-image:
-        linear-gradient(45deg, transparent 50%, #6b7280 50%),
-        linear-gradient(135deg, #6b7280 50%, transparent 50%),
-        linear-gradient(to right, transparent, transparent);
-      background-position:
-        calc(100% - 18px) calc(50% - 3px),
-        calc(100% - 12px) calc(50% - 3px),
-        calc(100% - 2.5rem) 0.5rem;
-      background-size:
-        6px 6px,
-        6px 6px,
-        1px 1.6rem;
-      background-repeat: no-repeat;
-      box-shadow: 0 1px 0 rgba(0, 0, 0, 0.02);
-    }
-    select:focus, input:focus, textarea:focus {
-      outline: none;
-      border-color: #111827;
-      box-shadow: 0 0 0 3px rgba(17, 24, 39, 0.15);
-    }
-    textarea {
-      min-height: 90px;
-      resize: vertical;
-    }
-    button {
-      padding: 10px 16px;
-      border: none;
-      border-radius: 8px;
-      cursor: pointer;
-      margin-right: 8px;
-      margin-top: 12px;
-    }
-    .btn-primary {
-      background: #111827;
-      color: white;
-    }
-    .btn-secondary {
-      background: #e5e7eb;
-      color: #111827;
-    }
-    #answer {
-      white-space: pre-wrap;
-      line-height: 1.6;
-    }
-    .source {
-      background: #f3f4f6;
-      border-radius: 8px;
-      padding: 12px;
-      margin-top: 10px;
-    }
-    .muted {
-      color: #6b7280;
-    }
-    .loading {
-      color: #2563eb;
-      font-weight: bold;
-    }
-    .error {
-      color: #dc2626;
-      font-weight: bold;
-    }
-  </style>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>RAG Mini Chat</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 900px;
+            margin: 30px auto;
+            padding: 0 16px;
+            background: #f7f7f7;
+        }
+
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 16px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
+            margin-bottom: 16px;
+        }
+
+        input,
+        textarea,
+        select {
+            width: 100%;
+            box-sizing: border-box;
+            padding: 12px;
+            border-radius: 8px;
+            border: 1px solid #ccc;
+            margin-top: 6px;
+        }
+
+        select {
+            appearance: none;
+            background-color: #fff;
+            border-color: #d1d5db;
+            padding-right: 44px;
+            background-image:
+                linear-gradient(45deg, transparent 50%, #6b7280 50%),
+                linear-gradient(135deg, #6b7280 50%, transparent 50%),
+                linear-gradient(to right, transparent, transparent);
+            background-position:
+                calc(100% - 18px) calc(50% - 3px),
+                calc(100% - 12px) calc(50% - 3px),
+                calc(100% - 2.5rem) 0.5rem;
+            background-size:
+                6px 6px,
+                6px 6px,
+                1px 1.6rem;
+            background-repeat: no-repeat;
+            box-shadow: 0 1px 0 rgba(0, 0, 0, 0.02);
+        }
+
+        select:focus,
+        input:focus,
+        textarea:focus {
+            outline: none;
+            border-color: #111827;
+            box-shadow: 0 0 0 3px rgba(17, 24, 39, 0.15);
+        }
+
+        textarea {
+            min-height: 90px;
+            resize: vertical;
+        }
+
+        button {
+            padding: 10px 16px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            margin-right: 8px;
+            margin-top: 12px;
+        }
+
+        .btn-primary {
+            background: #111827;
+            color: white;
+        }
+
+        .btn-secondary {
+            background: #e5e7eb;
+            color: #111827;
+        }
+
+        #answer {
+            white-space: pre-wrap;
+            line-height: 1.6;
+        }
+
+        .source {
+            background: #f3f4f6;
+            border-radius: 8px;
+            padding: 12px;
+            margin-top: 10px;
+        }
+
+        .muted {
+            color: #6b7280;
+        }
+
+        .loading {
+            color: #2563eb;
+            font-weight: bold;
+        }
+
+        .error {
+            color: #dc2626;
+            font-weight: bold;
+        }
+    </style>
 </head>
+
 <body>
-  <div class="card">
-    <h1>RAG Mini Chat</h1>
-    <p class="muted">NestJS + Ollama + app_id knowledge isolation</p>
-  </div>
+    <div class="card">
+        <h1>RAG Mini Chat</h1>
+        <p class="muted">NestJS + Ollama + app_id knowledge isolation</p>
+    </div>
 
-  <div class="card">
-    <label><strong>App ID</strong></label>
-    <select id="appId"></select>
+    <div class="card">
+        <label><strong>App ID</strong></label>
+        <select id="appId"></select>
 
-    <label style="display:block; margin-top:12px;"><strong>Pertanyaan</strong></label>
-    <textarea id="question" placeholder="Contoh: Apa visi Inovatrack?"></textarea>
+        <label style="display:block; margin-top:12px;"><strong>Pertanyaan</strong></label>
+        <textarea id="question" placeholder="Contoh: Apa visi Inovatrack?"></textarea>
 
-    <button class="btn-primary" onclick="askQuestion()">Kirim</button>
-    <button class="btn-secondary" onclick="reindexDocs()">Reindex</button>
-    <a href="/documents.html" style="margin-left:8px;">Manage Documents</a>
-  </div>
+        <button class="btn-primary" onclick="askQuestion()">Kirim</button>
+        <button class="btn-secondary" onclick="reindexDocs()">Reindex</button>
+        <label class="muted" style="margin-left:8px; user-select:none;">
+            <input id="streamMode" type="checkbox" checked
+                style="width:auto; margin-right:6px; vertical-align:middle;" />
+            Stream
+        </label>
+        <a href="/documents.html" style="margin-left:8px;">Manage Documents</a>
+        <a href="/widget-builder.html" style="margin-left:8px;">Widget Builder</a>
+    </div>
 
-  <div class="card">
-    <h3>Jawaban</h3>
-    <div id="answer" class="muted">Belum ada jawaban.</div>
-  </div>
+    <div class="card">
+        <h3>Jawaban</h3>
+        <div id="answer" class="muted">Belum ada jawaban.</div>
+    </div>
 
-  <div class="card">
-    <h3>Sumber Dokumen</h3>
-    <div id="sources" class="muted">Belum ada sumber.</div>
-  </div>
+    <div class="card">
+        <h3>Sumber Dokumen</h3>
+        <div id="sources" class="muted">Belum ada sumber.</div>
+    </div>
 
-  <script>
-    const answerEl = document.getElementById('answer');
-    const sourcesEl = document.getElementById('sources');
-    const questionEl = document.getElementById('question');
-    const appIdEl = document.getElementById('appId');
+    <script>
+        const answerEl = document.getElementById('answer');
+        const sourcesEl = document.getElementById('sources');
+        const questionEl = document.getElementById('question');
+        const appIdEl = document.getElementById('appId');
+        const streamModeEl = document.getElementById('streamMode');
 
-    async function loadApps() {
-      const savedAppId = localStorage.getItem('rag_app_id') || '';
+        async function askQuestionStream(appId, question) {
+            answerEl.innerHTML = '<span class="loading">Sedang memproses (stream)...</span>';
+            sourcesEl.innerHTML = '<span class="muted">Menunggu sumber...</span>';
 
-      try {
-        const res = await fetch('/rag/apps');
-        const apps = await res.json();
+            const url = `/rag/chat/stream?appId=${encodeURIComponent(appId)}&question=${encodeURIComponent(question)}`;
+            const res = await fetch(url);
 
-        if (!res.ok) {
-          throw new Error(apps.message || 'Gagal memuat daftar app');
+            if (!res.ok || !res.body) {
+                const data = await res.json().catch(() => ({}));
+                throw new Error(data.message || data.error || 'Stream gagal');
+            }
+
+            answerEl.textContent = '';
+            let sources = [];
+
+            const reader = res.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                buffer += decoder.decode(value, { stream: true });
+
+                const parts = buffer.split('\n\n');
+                buffer = parts.pop() || '';
+
+                for (const part of parts) {
+                    const line = part.split('\n').find((l) => l.startsWith('data: '));
+                    if (!line) continue;
+
+                    try {
+                        const payload = JSON.parse(line.slice('data: '.length));
+                        if (payload.type === 'sources') {
+                            sources = payload.data || [];
+                            sourcesEl.innerHTML = '<span class="muted">Menerima sumber...</span>';
+                        } else if (payload.type === 'token') {
+                            answerEl.textContent += payload.data || '';
+                        } else if (payload.type === 'done') {
+                            renderSources(sources);
+                        }
+                    } catch (e) {
+                        // ignore malformed chunks
+                    }
+                }
+            }
+
+            renderSources(sources);
         }
 
-        appIdEl.innerHTML = '';
+        async function loadApps() {
+            const savedAppId = localStorage.getItem('rag_app_id') || '';
 
-        const appList = Array.isArray(apps) ? apps : [];
-        const fallback = appList.length ? appList : ['inovatrack'];
+            try {
+                const res = await fetch('/rag/apps');
+                const apps = await res.json();
 
-        let selected = savedAppId && fallback.includes(savedAppId)
-          ? savedAppId
-          : fallback[0];
+                if (!res.ok) {
+                    throw new Error(apps.message || 'Gagal memuat daftar app');
+                }
 
-        for (const appId of fallback) {
-          const option = document.createElement('option');
-          option.value = appId;
-          option.textContent = appId;
-          if (appId === selected) {
-            option.selected = true;
-          }
-          appIdEl.appendChild(option);
+                appIdEl.innerHTML = '';
+
+                const appList = Array.isArray(apps) ? apps : [];
+                const fallback = appList.length ? appList : ['inovatrack'];
+
+                let selected = savedAppId && fallback.includes(savedAppId)
+                    ? savedAppId
+                    : fallback[0];
+
+                for (const appId of fallback) {
+                    const option = document.createElement('option');
+                    option.value = appId;
+                    option.textContent = appId;
+                    if (appId === selected) {
+                        option.selected = true;
+                    }
+                    appIdEl.appendChild(option);
+                }
+
+                localStorage.setItem('rag_app_id', selected);
+            } catch (error) {
+                appIdEl.innerHTML = '';
+                const option = document.createElement('option');
+                option.value = savedAppId || 'inovatrack';
+                option.textContent = option.value;
+                option.selected = true;
+                appIdEl.appendChild(option);
+
+                answerEl.innerHTML = `<span class="error">${error.message}</span>`;
+            }
+
+            appIdEl.addEventListener('change', () => {
+                localStorage.setItem('rag_app_id', appIdEl.value || '');
+            });
         }
 
-        localStorage.setItem('rag_app_id', selected);
-      } catch (error) {
-        appIdEl.innerHTML = '';
-        const option = document.createElement('option');
-        option.value = savedAppId || 'inovatrack';
-        option.textContent = option.value;
-        option.selected = true;
-        appIdEl.appendChild(option);
+        async function askQuestion() {
+            const question = questionEl.value.trim();
+            const appId = (appIdEl.value || '').trim();
 
-        answerEl.innerHTML = `<span class="error">${error.message}</span>`;
-      }
+            if (!appId) {
+                answerEl.innerHTML = '<span class="error">appId wajib diisi.</span>';
+                return;
+            }
 
-      appIdEl.addEventListener('change', () => {
-        localStorage.setItem('rag_app_id', appIdEl.value || '');
-      });
-    }
+            if (!question) {
+                answerEl.innerHTML = '<span class="error">Pertanyaan wajib diisi.</span>';
+                return;
+            }
 
-    async function askQuestion() {
-      const question = questionEl.value.trim();
-      const appId = (appIdEl.value || '').trim();
+            answerEl.innerHTML = '<span class="loading">Sedang memproses...</span>';
+            sourcesEl.innerHTML = '<span class="muted">Mencari sumber...</span>';
 
-      if (!appId) {
-        answerEl.innerHTML = '<span class="error">appId wajib diisi.</span>';
-        return;
-      }
+            try {
+                if (streamModeEl?.checked) {
+                    await askQuestionStream(appId, question);
+                    return;
+                }
 
-      if (!question) {
-        answerEl.innerHTML = '<span class="error">Pertanyaan wajib diisi.</span>';
-        return;
-      }
+                const response = await fetch('/rag/chat', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ appId, question }),
+                });
 
-      answerEl.innerHTML = '<span class="loading">Sedang memproses...</span>';
-      sourcesEl.innerHTML = '<span class="muted">Mencari sumber...</span>';
+                const data = await response.json();
 
-      try {
-        const response = await fetch('/rag/chat', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ appId, question }),
-        });
+                if (!response.ok) {
+                    throw new Error(data.message || data.error || 'Terjadi kesalahan');
+                }
 
-        const data = await response.json();
-
-        if (!response.ok) {
-          throw new Error(data.message || data.error || 'Terjadi kesalahan');
+                answerEl.textContent = data.answer || 'Tidak ada jawaban.';
+                renderSources(data.sources || []);
+            } catch (error) {
+                answerEl.innerHTML = `<span class="error">${error.message}</span>`;
+                sourcesEl.innerHTML = '<span class="muted">Gagal memuat sumber.</span>';
+            }
         }
 
-        answerEl.textContent = data.answer || 'Tidak ada jawaban.';
-        renderSources(data.sources || []);
-      } catch (error) {
-        answerEl.innerHTML = `<span class="error">${error.message}</span>`;
-        sourcesEl.innerHTML = '<span class="muted">Gagal memuat sumber.</span>';
-      }
-    }
+        async function reindexDocs() {
+            const appId = (appIdEl.value || '').trim();
 
-    async function reindexDocs() {
-      const appId = (appIdEl.value || '').trim();
+            if (!appId) {
+                answerEl.innerHTML = '<span class="error">appId wajib diisi.</span>';
+                return;
+            }
 
-      if (!appId) {
-        answerEl.innerHTML = '<span class="error">appId wajib diisi.</span>';
-        return;
-      }
+            answerEl.innerHTML = '<span class="loading">Sedang reindex dokumen...</span>';
+            sourcesEl.innerHTML = '<span class="muted">Menunggu hasil reindex...</span>';
 
-      answerEl.innerHTML = '<span class="loading">Sedang reindex dokumen...</span>';
-      sourcesEl.innerHTML = '<span class="muted">Menunggu hasil reindex...</span>';
+            try {
+                const response = await fetch('/rag/reindex', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ appId }),
+                });
 
-      try {
-        const response = await fetch('/rag/reindex', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ appId }),
-        });
+                const data = await response.json();
 
-        const data = await response.json();
+                if (!response.ok) {
+                    throw new Error(data.message || data.error || 'Reindex gagal');
+                }
 
-        if (!response.ok) {
-          throw new Error(data.message || data.error || 'Reindex gagal');
+                answerEl.textContent = `Reindex berhasil untuk ${data.appId}. Total chunks: ${data.totalChunks}`;
+                sourcesEl.innerHTML = `<span class="muted">Files: ${(data.files || []).join(', ')}</span>`;
+            } catch (error) {
+                answerEl.innerHTML = `<span class="error">${error.message}</span>`;
+                sourcesEl.innerHTML = '<span class="muted">Reindex gagal.</span>';
+            }
         }
 
-        answerEl.textContent = `Reindex berhasil untuk ${data.appId}. Total chunks: ${data.totalChunks}`;
-        sourcesEl.innerHTML = `<span class="muted">Files: ${(data.files || []).join(', ')}</span>`;
-      } catch (error) {
-        answerEl.innerHTML = `<span class="error">${error.message}</span>`;
-        sourcesEl.innerHTML = '<span class="muted">Reindex gagal.</span>';
-      }
-    }
+        function renderSources(sources) {
+            if (!sources.length) {
+                sourcesEl.innerHTML = '<span class="muted">Tidak ada sumber.</span>';
+                return;
+            }
 
-    function renderSources(sources) {
-      if (!sources.length) {
-        sourcesEl.innerHTML = '<span class="muted">Tidak ada sumber.</span>';
-        return;
-      }
-
-      sourcesEl.innerHTML = sources.map(source => `
+            sourcesEl.innerHTML = sources.map(source => `
         <div class="source">
           <div><strong>${source.file}</strong> — chunk ${source.chunkIndex} — score ${Number(source.score).toFixed(4)}</div>
           <div style="margin-top:8px">${escapeHtml(source.text)}</div>
         </div>
       `).join('');
-    }
+        }
 
-    function escapeHtml(text) {
-      return text
-        .replaceAll('&', '&amp;')
-        .replaceAll('<', '&lt;')
-        .replaceAll('>', '&gt;')
-        .replaceAll('"', '&quot;')
-        .replaceAll("'", '&#039;');
-    }
+        function escapeHtml(text) {
+            return text
+                .replaceAll('&', '&amp;')
+                .replaceAll('<', '&lt;')
+                .replaceAll('>', '&gt;')
+                .replaceAll('"', '&quot;')
+                .replaceAll("'", '&#039;');
+        }
 
-    loadApps();
-  </script>
+        loadApps();
+    </script>
 </body>
+
 </html>

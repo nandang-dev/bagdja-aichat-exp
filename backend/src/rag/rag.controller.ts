@@ -10,19 +10,25 @@ import {
   Query,
   UploadedFile,
   UseInterceptors,
+  Res,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { RagService } from './rag.service';
 
 @Controller('rag')
 export class RagController {
-  constructor(private readonly ragService: RagService) {}
+  constructor(private readonly ragService: RagService) { }
 
   @Get('test')
   test() {
     return {
       message: 'RAG module working',
     };
+  }
+
+  @Get('apps')
+  listApps() {
+    return this.ragService.listApps();
   }
 
   @Get('documents')
@@ -99,5 +105,27 @@ export class RagController {
     }
 
     return this.ragService.chat(appId, question);
+  }
+
+  @Get('chat/stream')
+  async chatStream(
+    @Query('appId') appId: string,
+    @Query('question') question: string,
+    @Res() res: any,
+  ) {
+    if (!appId) {
+      throw new BadRequestException('appId wajib diisi');
+    }
+
+    if (!question?.trim()) {
+      throw new BadRequestException('question wajib diisi');
+    }
+
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders?.();
+
+    await this.ragService.streamChat(appId, question, res);
   }
 }

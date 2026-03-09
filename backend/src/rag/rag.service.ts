@@ -1,417 +1,531 @@
 import {
-  BadRequestException,
-  Injectable,
-  InternalServerErrorException,
-  NotFoundException,
+    BadRequestException,
+    Injectable,
+    InternalServerErrorException,
+    NotFoundException,
 } from '@nestjs/common';
 import * as fs from 'fs';
 import * as path from 'path';
 import { PDFParse } from 'pdf-parse';
+import { parseDocx, parseDoc } from "./parsers/word.parser";
 
 type IndexItem = {
-  id: string;
-  appId: string;
-  file: string;
-  chunkIndex: number;
-  text: string;
-  embedding: number[];
+    id: string;
+    appId: string;
+    file: string;
+    chunkIndex: number;
+    text: string;
+    embedding: number[];
 };
 
 type ScoredIndexItem = IndexItem & {
-  score: number;
+    score: number;
 };
 
 type DocumentInfo = {
-  filename: string;
-  size: number;
-  updatedAt: string;
+    filename: string;
+    size: number;
+    updatedAt: string;
 };
 
 @Injectable()
 export class RagService {
-  private readonly ollamaBaseUrl = 'http://localhost:11434';
-  private readonly embedModel = 'embeddinggemma';
-  private readonly chatModel = 'qwen2.5:7b';
+    private readonly ollamaBaseUrl = 'http://localhost:11434';
+    private readonly embedModel = 'embeddinggemma';
+    private readonly chatModel = 'qwen2.5:7b';
 
-  private readonly docsRootDir = path.join(process.cwd(), 'docs');
-  private readonly dataDir = path.join(process.cwd(), 'data');
+    private readonly docsRootDir = path.join(process.cwd(), 'docs');
+    private readonly dataDir = path.join(process.cwd(), 'data');
 
-  private ensureBaseDirs() {
-    if (!fs.existsSync(this.docsRootDir)) {
-      fs.mkdirSync(this.docsRootDir, { recursive: true });
+    private ensureBaseDirs() {
+        if (!fs.existsSync(this.docsRootDir)) {
+            fs.mkdirSync(this.docsRootDir, { recursive: true });
+        }
+
+        if (!fs.existsSync(this.dataDir)) {
+            fs.mkdirSync(this.dataDir, { recursive: true });
+        }
     }
 
-    if (!fs.existsSync(this.dataDir)) {
-      fs.mkdirSync(this.dataDir, { recursive: true });
-    }
-  }
+    listApps(): string[] {
+        this.ensureBaseDirs();
 
-  private validateAppId(appId: string) {
-    if (!appId || !/^[a-zA-Z0-9-_]+$/.test(appId)) {
-      throw new BadRequestException(
-        'appId wajib diisi dan hanya boleh berisi huruf, angka, dash, underscore',
-      );
-    }
-  }
+        const entries = fs.readdirSync(this.docsRootDir, { withFileTypes: true });
 
-  private getAllowedExtensions() {
-    return ['.txt', '.pdf'];
-  }
-
-  private isAllowedFile(filename: string) {
-    const ext = path.extname(filename).toLowerCase();
-    return this.getAllowedExtensions().includes(ext);
-  }
-
-  private validateFilename(filename: string) {
-    if (!filename || filename.includes('/') || filename.includes('\\')) {
-      throw new BadRequestException('Filename tidak valid');
+        return entries
+            .filter((entry) => entry.isDirectory())
+            .map((entry) => entry.name)
+            .sort((a, b) => a.localeCompare(b));
     }
 
-    if (!this.isAllowedFile(filename)) {
-      throw new BadRequestException('Hanya file .txt dan .pdf yang diizinkan');
-    }
-  }
-
-  private getAppDocsDir(appId: string) {
-    this.validateAppId(appId);
-    return path.join(this.docsRootDir, appId);
-  }
-
-  private getIndexPath(appId: string) {
-    this.validateAppId(appId);
-    return path.join(this.dataDir, `${appId}_index.json`);
-  }
-
-  private ensureAppDocsDir(appId: string) {
-    const appDocsDir = this.getAppDocsDir(appId);
-
-    if (!fs.existsSync(appDocsDir)) {
-      fs.mkdirSync(appDocsDir, { recursive: true });
+    private validateAppId(appId: string) {
+        if (!appId || !/^[a-zA-Z0-9-_]+$/.test(appId)) {
+            throw new BadRequestException(
+                'appId wajib diisi dan hanya boleh berisi huruf, angka, dash, underscore',
+            );
+        }
     }
 
-    return appDocsDir;
-  }
-
-  private chunkText(text: string, chunkSize = 800, overlap = 150): string[] {
-    const clean = text.replace(/\s+/g, ' ').trim();
-    const chunks: string[] = [];
-
-    let start = 0;
-    while (start < clean.length) {
-      const end = Math.min(start + chunkSize, clean.length);
-      const chunk = clean.slice(start, end).trim();
-
-      if (chunk) {
-        chunks.push(chunk);
-      }
-
-      if (end === clean.length) {
-        break;
-      }
-
-      start += chunkSize - overlap;
+    private getAllowedExtensions() {
+        return ['.txt', '.pdf', '.doc', '.docx'];
     }
 
-    return chunks;
-  }
-
-  private async ollamaEmbed(text: string): Promise<number[]> {
-    const response = await fetch(`${this.ollamaBaseUrl}/api/embed`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: this.embedModel,
-        input: text,
-      }),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new InternalServerErrorException(`Embed failed: ${errorText}`);
+    private isAllowedFile(filename: string) {
+        const ext = path.extname(filename).toLowerCase();
+        return this.getAllowedExtensions().includes(ext);
     }
 
-    const data = await response.json();
-    return data.embeddings[0];
-  }
+    private validateFilename(filename: string) {
+        if (!filename || filename.includes('/') || filename.includes('\\')) {
+            throw new BadRequestException('Filename tidak valid');
+        }
 
-  private loadIndex(appId: string): IndexItem[] {
-    const indexPath = this.getIndexPath(appId);
-
-    if (!fs.existsSync(indexPath)) {
-      return [];
+        if (!this.isAllowedFile(filename)) {
+            throw new BadRequestException('Hanya file .txt dan .pdf yang diizinkan');
+        }
     }
 
-    return JSON.parse(fs.readFileSync(indexPath, 'utf8'));
-  }
-
-  private cosineSimilarity(a: number[], b: number[]): number {
-    let dot = 0;
-    let normA = 0;
-    let normB = 0;
-
-    for (let i = 0; i < a.length; i++) {
-      dot += a[i] * b[i];
-      normA += a[i] * a[i];
-      normB += b[i] * b[i];
+    private getAppDocsDir(appId: string) {
+        this.validateAppId(appId);
+        return path.join(this.docsRootDir, appId);
     }
 
-    if (normA === 0 || normB === 0) {
-      return 0;
+    private getIndexPath(appId: string) {
+        this.validateAppId(appId);
+        return path.join(this.dataDir, `${appId}_index.json`);
     }
 
-    return dot / (Math.sqrt(normA) * Math.sqrt(normB));
-  }
+    private ensureAppDocsDir(appId: string) {
+        const appDocsDir = this.getAppDocsDir(appId);
 
-  private async extractTextFromFile(filePath: string): Promise<string> {
-    const ext = path.extname(filePath).toLowerCase();
+        if (!fs.existsSync(appDocsDir)) {
+            fs.mkdirSync(appDocsDir, { recursive: true });
+        }
 
-    if (ext === '.txt') {
-      return fs.readFileSync(filePath, 'utf8');
+        return appDocsDir;
     }
 
-    if (ext === '.pdf') {
-      const buffer = fs.readFileSync(filePath);
-      const parser = new PDFParse({ data: buffer });
-      try {
-        const result = await parser.getText();
-        return result.text || '';
-      } finally {
-        await parser.destroy();
-      }
+    private chunkText(text: string, chunkSize = 800, overlap = 150): string[] {
+        const clean = text.replace(/\s+/g, ' ').trim();
+        const chunks: string[] = [];
+
+        let start = 0;
+        while (start < clean.length) {
+            const end = Math.min(start + chunkSize, clean.length);
+            const chunk = clean.slice(start, end).trim();
+
+            if (chunk) {
+                chunks.push(chunk);
+            }
+
+            if (end === clean.length) {
+                break;
+            }
+
+            start += chunkSize - overlap;
+        }
+
+        return chunks;
     }
 
-    throw new BadRequestException('Format file tidak didukung');
-  }
-
-  listDocuments(appId: string): DocumentInfo[] {
-    this.ensureBaseDirs();
-    const appDocsDir = this.ensureAppDocsDir(appId);
-
-    const files = fs
-      .readdirSync(appDocsDir)
-      .filter((file) => this.isAllowedFile(file));
-
-    return files.map((filename) => {
-      const fullPath = path.join(appDocsDir, filename);
-      const stat = fs.statSync(fullPath);
-
-      return {
-        filename,
-        size: stat.size,
-        updatedAt: stat.mtime.toISOString(),
-      };
-    });
-  }
-
-  saveDocument(appId: string, filename: string, buffer: Buffer) {
-    this.ensureBaseDirs();
-    this.validateFilename(filename);
-
-    const appDocsDir = this.ensureAppDocsDir(appId);
-    const filePath = path.join(appDocsDir, filename);
-
-    fs.writeFileSync(filePath, buffer);
-
-    return {
-      message: 'File uploaded',
-      appId,
-      filename,
-    };
-  }
-
-  replaceDocument(appId: string, filename: string, buffer: Buffer) {
-    this.ensureBaseDirs();
-    this.validateFilename(filename);
-
-    const appDocsDir = this.ensureAppDocsDir(appId);
-    const filePath = path.join(appDocsDir, filename);
-
-    if (!fs.existsSync(filePath)) {
-      throw new NotFoundException('File tidak ditemukan');
-    }
-
-    fs.writeFileSync(filePath, buffer);
-
-    return {
-      message: 'File replaced',
-      appId,
-      filename,
-    };
-  }
-
-  deleteDocument(appId: string, filename: string) {
-    this.ensureBaseDirs();
-    this.validateFilename(filename);
-
-    const appDocsDir = this.ensureAppDocsDir(appId);
-    const filePath = path.join(appDocsDir, filename);
-
-    if (!fs.existsSync(filePath)) {
-      throw new NotFoundException('File tidak ditemukan');
-    }
-
-    fs.unlinkSync(filePath);
-
-    return {
-      message: 'File deleted',
-      appId,
-      filename,
-    };
-  }
-
-  async buildIndex(appId: string) {
-    this.ensureBaseDirs();
-
-    const appDocsDir = this.ensureAppDocsDir(appId);
-    const files = fs
-      .readdirSync(appDocsDir)
-      .filter((file) => this.isAllowedFile(file));
-
-    if (files.length === 0) {
-      throw new InternalServerErrorException(
-        `Tidak ada file .txt atau .pdf di folder docs/${appId}`,
-      );
-    }
-
-    const index: IndexItem[] = [];
-
-    for (const file of files) {
-      const fullPath = path.join(appDocsDir, file);
-      const extractedText = await this.extractTextFromFile(fullPath);
-
-      if (!extractedText.trim()) {
-        console.warn(`Skip file kosong / tidak terbaca: ${file}`);
-        continue;
-      }
-
-      const chunks = this.chunkText(extractedText);
-
-      for (let i = 0; i < chunks.length; i++) {
-        const chunk = chunks[i];
-        const embedding = await this.ollamaEmbed(chunk);
-
-        index.push({
-          id: `${appId}-${file}-${i}`,
-          appId,
-          file,
-          chunkIndex: i,
-          text: chunk,
-          embedding,
+    private async ollamaEmbed(text: string): Promise<number[]> {
+        const response = await fetch(`${this.ollamaBaseUrl}/api/embed`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                model: this.embedModel,
+                input: text,
+            }),
         });
 
-        console.log(`Indexed [${appId}]: ${file} chunk ${i + 1}/${chunks.length}`);
-      }
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new InternalServerErrorException(`Embed failed: ${errorText}`);
+        }
+
+        const data = await response.json();
+        return data.embeddings[0];
     }
 
-    const indexPath = this.getIndexPath(appId);
-    fs.writeFileSync(indexPath, JSON.stringify(index, null, 2), 'utf8');
+    private loadIndex(appId: string): IndexItem[] {
+        const indexPath = this.getIndexPath(appId);
 
-    return {
-      message: 'Index berhasil dibuat',
-      appId,
-      totalChunks: index.length,
-      files,
-    };
-  }
+        if (!fs.existsSync(indexPath)) {
+            return [];
+        }
 
-  async searchRelevantChunks(
-    appId: string,
-    question: string,
-    topK = 3,
-  ): Promise<ScoredIndexItem[]> {
-    const index = this.loadIndex(appId);
-
-    if (index.length === 0) {
-      throw new InternalServerErrorException(
-        `Index kosong untuk ${appId}. Jalankan /rag/reindex dulu`,
-      );
+        return JSON.parse(fs.readFileSync(indexPath, 'utf8'));
     }
 
-    const questionEmbedding = await this.ollamaEmbed(question);
+    private cosineSimilarity(a: number[], b: number[]): number {
+        let dot = 0;
+        let normA = 0;
+        let normB = 0;
 
-    const scored: ScoredIndexItem[] = index.map((item) => ({
-      ...item,
-      score: this.cosineSimilarity(questionEmbedding, item.embedding),
-    }));
+        for (let i = 0; i < a.length; i++) {
+            dot += a[i] * b[i];
+            normA += a[i] * a[i];
+            normB += b[i] * b[i];
+        }
 
-    scored.sort((a, b) => b.score - a.score);
+        if (normA === 0 || normB === 0) {
+            return 0;
+        }
 
-    return scored.slice(0, topK);
-  }
-
-  async askModel(
-    appId: string,
-    question: string,
-    contextChunks: ScoredIndexItem[],
-  ) {
-    const contextText = contextChunks
-      .map(
-        (chunk, idx) =>
-          `[Sumber ${idx + 1} | ${chunk.file} | score=${chunk.score.toFixed(4)}]\n${chunk.text}`,
-      )
-      .join('\n\n');
-
-    const response = await fetch(`${this.ollamaBaseUrl}/api/chat`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: this.chatModel,
-        stream: false,
-        messages: [
-          {
-            role: 'system',
-            content: `Kamu adalah asisten AI untuk aplikasi ${appId}. Jawab hanya berdasarkan konteks dokumen yang diberikan. Jika jawaban tidak ada di konteks, jawab: "Saya tidak menemukan informasi itu di dokumen." Jangan mengarang.`,
-          },
-          {
-            role: 'user',
-            content: `App ID: ${appId}\n\nPertanyaan user:\n${question}\n\nKonteks dokumen:\n${contextText}`,
-          },
-        ],
-      }),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new InternalServerErrorException(`Chat failed: ${errorText}`);
+        return dot / (Math.sqrt(normA) * Math.sqrt(normB));
     }
 
-    const data = await response.json();
+    private async extractTextFromFile(filePath: string): Promise<string> {
+        const ext = path.extname(filePath).toLowerCase();
 
-    return {
-      appId,
-      answer: data?.message?.content || '',
-      sources: contextChunks.map((item) => ({
-        file: item.file,
-        chunkIndex: item.chunkIndex,
-        score: item.score,
-        text: item.text,
-      })),
-    };
-  }
+        if (ext === '.txt') {
+            return fs.readFileSync(filePath, 'utf8');
+        }
 
-  async chat(appId: string, question: string) {
-    if (!question?.trim()) {
-      throw new BadRequestException('question wajib diisi');
+        if (ext === '.pdf') {
+            const buffer = fs.readFileSync(filePath);
+            const parser = new PDFParse({ data: buffer });
+            try {
+                const result = await parser.getText();
+                return result.text || '';
+            } finally {
+                await parser.destroy();
+            }
+        }
+
+        if (filePath.endsWith('.docx')) {
+            return await parseDocx(filePath);
+        }
+
+        if (filePath.endsWith('.doc')) {
+            return await parseDoc(filePath);
+        }
+
+        throw new BadRequestException('Format file tidak didukung');
     }
 
-    const relevantChunks = await this.searchRelevantChunks(appId, question, 3);
+    listDocuments(appId: string): DocumentInfo[] {
+        this.ensureBaseDirs();
+        const appDocsDir = this.ensureAppDocsDir(appId);
 
-    console.log('App:', appId);
-    console.log('Question:', question);
-    console.log(
-      'Top chunks:',
-      relevantChunks.map((item) => ({
-        file: item.file,
-        chunkIndex: item.chunkIndex,
-        score: item.score,
-      })),
-    );
+        const files = fs
+            .readdirSync(appDocsDir)
+            .filter((file) => this.isAllowedFile(file));
 
-    return this.askModel(appId, question, relevantChunks);
-  }
+        return files.map((filename) => {
+            const fullPath = path.join(appDocsDir, filename);
+            const stat = fs.statSync(fullPath);
+
+            return {
+                filename,
+                size: stat.size,
+                updatedAt: stat.mtime.toISOString(),
+            };
+        });
+    }
+
+    saveDocument(appId: string, filename: string, buffer: Buffer) {
+        this.ensureBaseDirs();
+        this.validateFilename(filename);
+
+        const appDocsDir = this.ensureAppDocsDir(appId);
+        const filePath = path.join(appDocsDir, filename);
+
+        fs.writeFileSync(filePath, buffer);
+
+        return {
+            message: 'File uploaded',
+            appId,
+            filename,
+        };
+    }
+
+    replaceDocument(appId: string, filename: string, buffer: Buffer) {
+        this.ensureBaseDirs();
+        this.validateFilename(filename);
+
+        const appDocsDir = this.ensureAppDocsDir(appId);
+        const filePath = path.join(appDocsDir, filename);
+
+        if (!fs.existsSync(filePath)) {
+            throw new NotFoundException('File tidak ditemukan');
+        }
+
+        fs.writeFileSync(filePath, buffer);
+
+        return {
+            message: 'File replaced',
+            appId,
+            filename,
+        };
+    }
+
+    deleteDocument(appId: string, filename: string) {
+        this.ensureBaseDirs();
+        this.validateFilename(filename);
+
+        const appDocsDir = this.ensureAppDocsDir(appId);
+        const filePath = path.join(appDocsDir, filename);
+
+        if (!fs.existsSync(filePath)) {
+            throw new NotFoundException('File tidak ditemukan');
+        }
+
+        fs.unlinkSync(filePath);
+
+        return {
+            message: 'File deleted',
+            appId,
+            filename,
+        };
+    }
+
+    async buildIndex(appId: string) {
+        this.ensureBaseDirs();
+
+        const appDocsDir = this.ensureAppDocsDir(appId);
+        const files = fs
+            .readdirSync(appDocsDir)
+            .filter((file) => this.isAllowedFile(file));
+
+        if (files.length === 0) {
+            throw new InternalServerErrorException(
+                `Tidak ada file .txt atau .pdf di folder docs/${appId}`,
+            );
+        }
+
+        const index: IndexItem[] = [];
+
+        for (const file of files) {
+            const fullPath = path.join(appDocsDir, file);
+            const extractedText = await this.extractTextFromFile(fullPath);
+
+            if (!extractedText.trim()) {
+                console.warn(`Skip file kosong / tidak terbaca: ${file}`);
+                continue;
+            }
+
+            const chunks = this.chunkText(extractedText);
+
+            for (let i = 0; i < chunks.length; i++) {
+                const chunk = chunks[i];
+                const embedding = await this.ollamaEmbed(chunk);
+
+                index.push({
+                    id: `${appId}-${file}-${i}`,
+                    appId,
+                    file,
+                    chunkIndex: i,
+                    text: chunk,
+                    embedding,
+                });
+
+                console.log(`Indexed [${appId}]: ${file} chunk ${i + 1}/${chunks.length}`);
+            }
+        }
+
+        const indexPath = this.getIndexPath(appId);
+        fs.writeFileSync(indexPath, JSON.stringify(index, null, 2), 'utf8');
+
+        return {
+            message: 'Index berhasil dibuat',
+            appId,
+            totalChunks: index.length,
+            files,
+        };
+    }
+
+    async searchRelevantChunks(
+        appId: string,
+        question: string,
+        topK = 3,
+    ): Promise<ScoredIndexItem[]> {
+        const index = this.loadIndex(appId);
+
+        if (index.length === 0) {
+            throw new InternalServerErrorException(
+                `Index kosong untuk ${appId}. Jalankan /rag/reindex dulu`,
+            );
+        }
+
+        const questionEmbedding = await this.ollamaEmbed(question);
+
+        const scored: ScoredIndexItem[] = index.map((item) => ({
+            ...item,
+            score: this.cosineSimilarity(questionEmbedding, item.embedding),
+        }));
+
+        scored.sort((a, b) => b.score - a.score);
+
+        return scored.slice(0, topK);
+    }
+
+    async askModel(
+        appId: string,
+        question: string,
+        contextChunks: ScoredIndexItem[],
+    ) {
+        const contextText = contextChunks
+            .map(
+                (chunk, idx) =>
+                    `[Sumber ${idx + 1} | ${chunk.file} | score=${chunk.score.toFixed(4)}]\n${chunk.text}`,
+            )
+            .join('\n\n');
+
+        const response = await fetch(`${this.ollamaBaseUrl}/api/chat`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                model: this.chatModel,
+                stream: false,
+                messages: [
+                    {
+                        role: 'system',
+                        content: `Kamu adalah asisten AI untuk aplikasi ${appId}. Jawab hanya berdasarkan konteks dokumen yang diberikan. Jika jawaban tidak ada di konteks, jawab: "Saya tidak menemukan informasi itu di dokumen." Jangan mengarang.`,
+                    },
+                    {
+                        role: 'user',
+                        content: `App ID: ${appId}\n\nPertanyaan user:\n${question}\n\nKonteks dokumen:\n${contextText}`,
+                    },
+                ],
+            }),
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new InternalServerErrorException(`Chat failed: ${errorText}`);
+        }
+
+        const data = await response.json();
+
+        return {
+            appId,
+            answer: data?.message?.content || '',
+            sources: contextChunks.map((item) => ({
+                file: item.file,
+                chunkIndex: item.chunkIndex,
+                score: item.score,
+                text: item.text,
+            })),
+        };
+    }
+
+    async chat(appId: string, question: string) {
+        if (!question?.trim()) {
+            throw new BadRequestException('question wajib diisi');
+        }
+
+        const relevantChunks = await this.searchRelevantChunks(appId, question, 3);
+
+        console.log('App:', appId);
+        console.log('Question:', question);
+        console.log(
+            'Top chunks:',
+            relevantChunks.map((item) => ({
+                file: item.file,
+                chunkIndex: item.chunkIndex,
+                score: item.score,
+            })),
+        );
+
+        return this.askModel(appId, question, relevantChunks);
+    }
+
+    async streamChat(appId: string, question: string, res: any) {
+        const relevantChunks = await this.searchRelevantChunks(appId, question, 3);
+
+        const contextText = relevantChunks
+            .map(
+                (chunk, idx) =>
+                    `[Sumber ${idx + 1} | ${chunk.file} | score=${chunk.score.toFixed(4)}]\n${chunk.text}`,
+            )
+            .join('\n\n');
+
+        const response = await fetch(`${this.ollamaBaseUrl}/api/chat`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                model: this.chatModel,
+                stream: true,
+                messages: [
+                    {
+                        role: 'system',
+                        content: `Kamu adalah asisten AI untuk aplikasi ${appId}. Jawab hanya berdasarkan konteks dokumen yang diberikan. Jika jawaban tidak ada di konteks, jawab: "Saya tidak menemukan informasi itu di dokumen." Jangan mengarang.`,
+                    },
+                    {
+                        role: 'user',
+                        content: `App ID: ${appId}\n\nPertanyaan user:\n${question}\n\nKonteks dokumen:\n${contextText}`,
+                    },
+                ],
+            }),
+        });
+
+        if (!response.ok || !response.body) {
+            const errorText = await response.text();
+            throw new InternalServerErrorException(`Chat failed: ${errorText}`);
+        }
+
+        const sourcePayload = {
+            type: 'sources',
+            data: relevantChunks.map((item) => ({
+                file: item.file,
+                chunkIndex: item.chunkIndex,
+                score: item.score,
+                text: item.text,
+            })),
+        };
+
+        res.write(`data: ${JSON.stringify(sourcePayload)}\n\n`);
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
+
+            for (const line of lines) {
+                const trimmed = line.trim();
+                if (!trimmed) continue;
+
+                try {
+                    const parsed = JSON.parse(trimmed);
+                    const token = parsed?.message?.content || '';
+
+                    if (token) {
+                        res.write(
+                            `data: ${JSON.stringify({
+                                type: 'token',
+                                data: token,
+                            })}\n\n`,
+                        );
+                    }
+
+                    if (parsed?.done) {
+                        res.write(
+                            `data: ${JSON.stringify({
+                                type: 'done',
+                            })}\n\n`,
+                        );
+                    }
+                } catch (error) {
+                    console.error('Stream parse error:', error);
+                }
+            }
+        }
+
+        res.end();
+    }
 }
